@@ -1,145 +1,115 @@
 import argparse
-import json
 import sys
-from typing import List
-
+import os
+import glob
+import shutil
+from datetime import datetime
 from lib.filter import (
-    DuplicateParams,
-    FilterOptions,
-    IncidenceAngleParams,
-    IntensityParams,
-    RangeParams,
-    build_pipeline,
-    execute_pipeline,
+    FilterOptions, IncidenceAngleParams, RangeParams, VoxelParams,
+    build_individual_pipeline, build_merge_pipeline, execute_pipeline, save_report
 )
 
-
-def parse_args(args: List[str]) -> argparse.Namespace:
-    """Parses command-line arguments for the PDAL filter pipeline."""
+def parse_args():
     parser = argparse.ArgumentParser(
-        description="Execute a PDAL filter pipeline on a point cloud."
+        description="GeoQuantz GSI-Compliant PointCloud Pipeline",
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
-
-    # Core IO arguments
+    # プリセット選択
+    parser.add_argument("--preset", choices=["tls", "uav"], default="tls", help="Select sensor preset (Default: tls)")
+    
+    # ワークフロー制御
+    parser.add_argument("--no-merge", action="store_true", help="Output individual LAS files without merging")
+    
+    # フィルタパラメータ
+    parser.add_argument("--range-max", type=float, help="Override max distance (m)")
+    parser.add_argument("--voxel-size", type=float, help="Override voxel size (m)")
+    parser.add_argument("--color-clean", action="store_true", help="Enable ortho-based ghost removal")
     parser.add_argument(
-        "--input", "-i", required=True, help="Path to the input point cloud file."
-    )
-    parser.add_argument(
-        "--output", "-o", required=True, help="Path to the output point cloud file."
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Print the generated PDAL pipeline dictionary without executing it.",
-    )
-
-    # Incidence Angle Filter Group
-    incidence_group = parser.add_argument_group("Incidence Angle Filter")
-    incidence_group.add_argument(
-        "--incidence-angle-max",
-        type=float,
-        help="Maximum incidence angle (uses absolute ScanAngleRank).",
-    )
-
-    # Intensity Filter Group
-    intensity_group = parser.add_argument_group("Intensity Filter")
-    intensity_group.add_argument(
-        "--intensity-min", type=float, help="Minimum intensity value."
-    )
-    intensity_group.add_argument(
-        "--intensity-max", type=float, help="Maximum intensity value."
-    )
-
-    # Measurement Distance (Range) Filter Group
-    range_group = parser.add_argument_group("Measurement Distance Filter")
-    range_group.add_argument(
-        "--range-min", type=float, help="Minimum Euclidean distance from origin."
-    )
-    range_group.add_argument(
-        "--range-max", type=float, help="Maximum Euclidean distance from origin."
-    )
-
-    # Duplicate Filter Group
-    duplicate_group = parser.add_argument_group("Duplicate Filter")
-    duplicate_group.add_argument(
-        "--deduplicate",
-        action="store_true",
-        help="Enable duplicate point removal (removes exact XYZ matches).",
-    )
-
-    return parser.parse_args(args)
-
-
-def assemble_config(args: argparse.Namespace) -> FilterOptions:
-    """
-    Maps CLI arguments to the structured FilterOptions configuration object.
-    Filters are only enabled if relevant arguments are provided.
-    """
-    # Incidence filter: enabled if max angle is provided
-    incidence = None
-    if args.incidence_angle_max is not None:
-        incidence = IncidenceAngleParams(max_angle=args.incidence_angle_max)
-
-    # Intensity filter: enabled if either min or max intensity is provided
-    intensity = None
-    if args.intensity_min is not None or args.intensity_max is not None:
-        intensity = IntensityParams(
-            min_intensity=args.intensity_min, max_intensity=args.intensity_max
+        "--color-threshold", 
+        type=float, 
+        help=(
+            "Color difference threshold (0-255). Lower is stricter. "
+            "50: Aggressive (High risk), 80-100: Standard, 120-150: Loose (Safe)"
         )
-
-    # Range filter: enabled if either min or max distance is provided
-    range_dist = None
-    if args.range_min is not None or args.range_max is not None:
-        range_dist = RangeParams(
-            min_distance=args.range_min, max_distance=args.range_max
-        )
-
-    # Duplicate filter: explicitly enabled via flag
-    duplicate = None
-    if args.deduplicate:
-        duplicate = DuplicateParams(enabled=True)
-
-    return FilterOptions(
-        incidence=incidence,
-        intensity=intensity,
-        range_dist=range_dist,
-        duplicate=duplicate,
     )
+    
+    # パス設定
+    parser.add_argument("-i", "--input", default="01_raw", help="Input directory (Default: 01_raw)")
+    parser.add_argument("-o", "--output", default="04_product", help="Output root directory")
+    parser.add_argument("--ortho", default="02_ref/ortho/katsuoka_ortho.tif", help="Path to reference ortho")
 
+    return parser.parse_args()
 
 def main():
-    """Main entry point for the CLI tool."""
     try:
-        args = parse_args(sys.argv[1:])
-        filter_params = assemble_config(args)
-
-        # Build the pipeline dictionary using the existing builder logic
-        pipeline_dict = build_pipeline(args.input, args.output, filter_params)
-
-        if args.dry_run:
-            print("--- DRY RUN: Generated PDAL Pipeline ---")
-            print(json.dumps(pipeline_dict, indent=4))
-            return
-
-        # Execute the pipeline using the existing executor logic
-        print(f"Executing pipeline: {args.input} -> {args.output}")
-        result = execute_pipeline(pipeline_dict)
-
-        if result["success"]:
-            print("Pipeline execution completed successfully.")
-            print(f"Points processed: {result['points_processed']}")
-            if "note" in result:
-                print(f"Note: {result['note']}")
-        else:
-            print(f"Pipeline execution failed: {result['error']}", file=sys.stderr)
-            if result.get("log"):
-                print(f"Log: {result['log']}", file=sys.stderr)
+        args = parse_args()
+        
+        # 入力ファイルの探索 (01_raw 直下)
+        input_files = glob.glob(os.path.join(args.input, "*.e57"))
+        if not input_files:
+            print(f"Error: No E57 files found in {os.path.abspath(args.input)}")
             sys.exit(1)
 
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
+        # プリセット/パラメータの確定
+        if args.preset == "tls":
+            d_range = args.range_max or 15.0
+            d_inc_min, d_inc_max = 4.0, 86.0
+            d_voxel = args.voxel_size or 0.01
+            d_color_th = args.color_threshold or 120.0
+        else:
+            d_range = args.range_max or 60.0
+            d_inc_min, d_inc_max = 4.0, 45.0
+            d_voxel = args.voxel_size or 0.10
+            d_color_th = args.color_threshold or 80.0
 
+        now_str = datetime.now().strftime("%Y%m%d_%H%M")
+        session_name = f"{args.preset}_{now_str}"
+        output_session_dir = os.path.join(args.output, session_name)
+        os.makedirs(output_session_dir, exist_ok=True)
+
+        is_merging = not args.no_merge
+        temp_dir = os.path.join("03_work", f"_temp_{session_name}") if is_merging else output_session_dir
+        if is_merging:
+            os.makedirs(temp_dir, exist_ok=True)
+
+        opt = FilterOptions(
+            preset_name=args.preset,
+            incidence=IncidenceAngleParams(min_angle=d_inc_min, max_angle=d_inc_max),
+            range_dist=RangeParams(max_distance=d_range),
+            voxel=VoxelParams(cell_size=d_voxel),
+            color_clean=args.color_clean,
+            color_threshold=d_color_th,
+            ortho_path=args.ortho
+        )
+
+        processed_files = []
+        # Phase 1: 個別フィルタリング
+        for i, f in enumerate(input_files):
+            out_name = os.path.basename(f).replace(".e57", ".las")
+            target_path = os.path.join(temp_dir, out_name)
+            print(f"[{i+1}/{len(input_files)}] Phase 1: Processing {os.path.basename(f)}")
+            execute_pipeline(build_individual_pipeline(f, target_path, opt))
+            processed_files.append(target_path)
+
+        # Phase 2: マージと最終処理
+        if is_merging:
+            file_tag = f"GQ_{args.preset.upper()}_R{int(d_range)}_V{int(d_voxel*1000)}mm"
+            final_name = f"{file_tag}_{now_str}.las"
+            final_path = os.path.join(output_session_dir, final_name)
+            
+            print(f"Phase 2: Merging -> {final_name}")
+            total_pts = execute_pipeline(build_merge_pipeline(processed_files, final_path, opt))
+            
+            save_report(output_session_dir, final_name, opt, total_pts)
+            
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+            print(f"Success! Merged product saved in {output_session_dir}")
+        else:
+            print(f"Success! Individual products saved in {output_session_dir}")
+
+    except Exception as e:
+        print(f"CLI Error: {e}")
 
 if __name__ == "__main__":
     main()

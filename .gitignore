@@ -77,3 +77,15 @@ fabric.properties
 # Android studio 3.1+ serialized cache file
 .idea/caches/build_file_checksums.ser
 
+01_raw/
+02_ref/
+03_work/
+04_product/
+__pycache__/
+.venv/
+.env
+
+# 追加：巨大な点群ファイルとビルド生成物を除外
+*.las
+*.lasx
+build/

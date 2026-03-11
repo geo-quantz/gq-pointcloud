@@ -1,233 +1,155 @@
 import json
+import os
+import csv
+import subprocess
+import math
+import shutil
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from datetime import datetime
+from typing import Optional, Dict, Any, Tuple, List
 
 import pdal
-
+import numpy as np
+import pye57
 
 # -------------------------------
-# Parameter definitions
+# 1. Parameter Definitions
 # -------------------------------
-
-class FilterType:
-    EXPRESSION = "filters.expression"
-    UNIQUE = "filters.unique"
-    DUPLICATE = "filters.duplicate"
-
 
 @dataclass
 class IncidenceAngleParams:
-    """Parameters for incidence angle filter.
-    Many datasets approximate incidence using the LAS 'ScanAngleRank' dimension.
-    """
-
-    max_angle: float
+    min_angle: float # 面に対する最小角度 (例: 4度)
+    max_angle: float # 面に対する最大角度 (例: 86度)
     enabled: bool = True
-
-
-@dataclass
-class IntensityParams:
-    """Parameters for intensity (return intensity) filter."""
-
-    min_intensity: Optional[float] = None
-    max_intensity: Optional[float] = None
-    enabled: bool = True
-
 
 @dataclass
 class RangeParams:
-    """Parameters for measurement distance (range) filter.
-    If the dataset does not provide a dedicated 'Distance' dimension, we compute
-    Euclidean distance from origin using an expression: sqrt(X^2 + Y^2 + Z^2).
-    """
-
-    min_distance: Optional[float] = None
-    max_distance: Optional[float] = None
+    max_distance: float
     enabled: bool = True
-
 
 @dataclass
-class DuplicateParams:
-    """Parameters for duplicate point filter.
-    Uses PDAL's 'filters.unique,' which removes duplicate points (same XYZ).
-    """
-
+class VoxelParams:
+    cell_size: float
     enabled: bool = True
-
 
 @dataclass
 class FilterOptions:
-    """Container for all filter parameters, used by the pipeline builder."""
-
+    preset_name: str
     incidence: Optional[IncidenceAngleParams] = None
-    intensity: Optional[IntensityParams] = None
     range_dist: Optional[RangeParams] = None
-    duplicate: Optional[DuplicateParams] = None
-
-
-# -------------------------------
-# Filter builders (composable, data-driven)
-# -------------------------------
-
-
-def build_incidence_angle_filter(
-        params: Optional[IncidenceAngleParams],
-) -> Optional[Dict[str, Any]]:
-    """Conditionally build incidence angle expression filter.
-    - Disabled or missing params -> None
-    - Otherwise, returns a PDAL 'filters.expression' stage.
-    """
-    if not params or not params.enabled:
-        return None
-
-    # Use absolute value to keep points within +/- max_angle from nadir.
-    return {
-        "type": FilterType.EXPRESSION,
-        "expression": f"abs(ScanAngleRank) <= {params.max_angle}",
-    }
-
-
-def build_intensity_filter(
-        params: Optional[IntensityParams],
-) -> Optional[Dict[str, Any]]:
-    """Conditionally build intensity range expression filter."""
-    if not params or not params.enabled:
-        return None
-
-    expressions = []
-    if params.min_intensity is not None:
-        expressions.append(f"Intensity >= {params.min_intensity}")
-    if params.max_intensity is not None:
-        expressions.append(f"Intensity <= {params.max_intensity}")
-
-    if not expressions:
-        return None
-
-    return {"type": FilterType.EXPRESSION, "expression": " && ".join(expressions)}
-
-
-def build_range_filter(params: Optional[RangeParams]) -> Optional[Dict[str, Any]]:
-    """Conditionally build measurement distance filter.
-    We avoid assuming a specific distance dimension and instead use an
-    expression over coordinates. This keeps behavior deterministic across
-    inputs that may not have a 'Distance' or 'Range' dimension.
-    """
-    if not params or not params.enabled:
-        return None
-
-    conds = []
-    # Compute Euclidean distance from the origin in the expression.
-    dist_expr = "sqrt(X*X + Y*Y + Z*Z)"
-    if params.min_distance is not None:
-        conds.append(f"{dist_expr} >= {params.min_distance}")
-    if params.max_distance is not None:
-        conds.append(f"{dist_expr} <= {params.max_distance}")
-
-    if not conds:
-        return None
-
-    return {"type": FilterType.EXPRESSION, "expression": " && ".join(conds)}
-
-
-def build_duplicate_filter(
-        params: Optional[DuplicateParams],
-) -> Optional[Dict[str, Any]]:
-    """Conditionally build duplicate removal filter using 'filters.unique'.
-    'filters.unique' removes points sharing the same XYZ (exact duplicates).
-    This avoids relying on optional plugins like 'filters.duplicate'.
-    """
-    if not params or not params.enabled:
-        return None
-
-    return {"type": FilterType.UNIQUE, "keep_first": True}
-
+    voxel: Optional[VoxelParams] = None
+    color_clean: bool = False
+    color_threshold: float = 120.0
+    ortho_path: Optional[str] = None
+    deduplicate: bool = False
+    report_enabled: bool = True
 
 # -------------------------------
-# Pipeline assembly & execution
+# 2. Pipeline Builders (Phase 1 & 2)
 # -------------------------------
 
+def get_origin_from_e57_header(path: str) -> Optional[Tuple[float, float, float]]:
+    try:
+        e57 = pye57.E57(path)
+        if e57.scan_count > 0:
+            pos = e57.get_header(0).translation
+            return (float(pos[0]), float(pos[1]), float(pos[2]))
+        e57.close()
+    except: pass
+    return None
 
-def build_pipeline(
-        input_path: str, output_path: str, filter_params: FilterOptions
-) -> Dict[str, Any]:
-    """Assemble a PDAL pipeline dictionary from enabled filters.
-    - Starts with the reader (input path string)
-    - Adds enabled filters in a stable, predefined order
-    - Ends with a writer stage selected by output extension
-    """
-    stages = [input_path]
+def build_individual_pipeline(input_path: str, output_path: str, opt: FilterOptions) -> Dict[str, Any]:
+    stages = []
+    tag = "reader"
+    stages.append({"type": "readers.e57", "filename": input_path, "tag": tag}) #
+    
+    origin = get_origin_from_e57_header(input_path)
+    
+    # 1. Range (15m制限)
+    if opt.range_dist and origin:
+        x0, y0, z0 = origin
+        dx, dy, dz = f"(X-({x0}))", f"(Y-({y0}))", f"(Z-({z0}))"
+        dist_sq = f"({dx}*{dx} + {dy}*{dy} + {dz}*{dz})"
+        stages.append({
+            "type": "filters.expression", #
+            "expression": f"{dist_sq} <= {opt.range_dist.max_distance * opt.range_dist.max_distance}",
+            "inputs": [tag], "tag": "range"
+        })
+        tag = "range"
 
-    # Ordered list of (builder, params) ensures predictable order.
-    filter_builders = [
-        (build_incidence_angle_filter, filter_params.incidence),
-        (build_intensity_filter, filter_params.intensity),
-        (build_range_filter, filter_params.range_dist),
-        (build_duplicate_filter, filter_params.duplicate),
-    ]
+    # 2. Incidence Angle (4-86度)
+    if opt.incidence and origin:
+        x0, y0, z0 = origin
+        dx, dy, dz = f"(X-({x0}))", f"(Y-({y0}))", f"(Z-({z0}))"
+        dot_expr = f"({dx}*NormalX + {dy}*NormalY + {dz}*NormalZ)" #
+        v_len_sq = f"({dx}*{dx} + {dy}*{dy} + {dz}*{dz})"
+        n_len_sq = f"(NormalX*NormalX + NormalY*NormalY + NormalZ*NormalZ)"
+        cos_sq = f"(({dot_expr}*{dot_expr}) / ({v_len_sq} * {n_len_sq}))"
+        
+        # 面に対する角α=4〜86度は、法線との角θ=4〜86度と同じ範囲
+        min_limit = math.cos(math.radians(opt.incidence.max_angle))**2
+        max_limit = math.cos(math.radians(opt.incidence.min_angle))**2
+        
+        stages.append({
+            "type": "filters.expression",
+            "expression": f"{cos_sq} >= {min_limit} && {cos_sq} <= {max_limit}",
+            "inputs": [tag], "tag": "inc"
+        })
+        tag = "inc"
 
-    for builder, p in filter_builders:
-        f = builder(p)
-        if f is not None:
-            stages.append(f)
+    # 3. Voxel (1cm密度)
+    if opt.voxel:
+        stages.append({
+            "type": "filters.voxelcentroidnearestneighbor", #
+            "cell": opt.voxel.cell_size, 
+            "inputs": [tag], "tag": "vox"
+        })
+        tag = "vox"
 
-    # Choose a writer type based on a file extension
-    writer_type = "writers.las"
-    if output_path.endswith(".copc.laz"):
-        writer_type = "writers.copc"
-    elif output_path.endswith(".txt") or output_path.endswith(".csv"):
-        writer_type = "writers.text"
-    # PDAL's writers.las can write LAZ if LASzip support is built in.
-
-    stages.append({"type": writer_type, "filename": output_path})
-
+    stages.append({"type": "writers.las", "filename": output_path, "inputs": [tag]}) #
     return {"pipeline": stages}
 
+def build_merge_pipeline(temp_files: List[str], output_path: str, opt: FilterOptions) -> Dict[str, Any]:
+    stages = []
+    input_tags = []
+    for i, f in enumerate(temp_files):
+        tag = f"tmp_{i}"
+        stages.append({"type": "readers.las", "filename": f, "tag": tag})
+        input_tags.append(tag)
+    
+    stages.append({"type": "filters.merge", "inputs": input_tags, "tag": "merged"})
+    current = "merged"
 
-def execute_pipeline(pipeline_dict: Dict[str, Any]) -> Dict[str, Any]:
-    """Execute a PDAL pipeline from a Python dictionary.
-    Returns a result dict with success flag, point count, and metadata/logs.
+    if opt.color_clean and opt.ortho_path and os.path.exists(opt.ortho_path):
+        stages.append({
+            "type": "filters.colorization",
+            "raster": opt.ortho_path,
+            "dimensions": "OrthoRed:1:1, OrthoGreen:1:2, OrthoBlue:1:3"
+        })
+        th = opt.color_threshold
+        expr = f"(abs(Red/256.0 - OrthoRed) < {th}) && (abs(Green/256.0 - OrthoGreen) < {th}) && (abs(Blue/256.0 - OrthoBlue) < {th})"
+        stages.append({"type": "filters.expression", "expression": expr, "tag": "color"})
+        current = "color"
 
-    Robustness: If the PDAL build lacks certain optional filters (e.g.,
-    'filters.unique' or 'filters.duplicate'), we retry once with those
-    stages removed to keep execution deterministic in plugin-light envs.
-    """
+    stages.append({"type": "writers.las", "filename": output_path, "inputs": [current], "forward": "all"})
+    return {"pipeline": stages}
 
-    def _run(pdict: Dict[str, Any]) -> Dict[str, Any]:
-        pl = pdal.Pipeline(json.dumps(pdict))
-        pc = pl.execute()
-        # PDAL may return metadata as a JSON string or a Python dict depending on version
-        raw_md = pl.metadata
-        md = json.loads(raw_md) if isinstance(raw_md, str) else raw_md
-        return {
-            "success": True,
-            "points_processed": pc,
-            "metadata": md,
-            "log": pl.log,
-        }
-
+def execute_pipeline(pipeline_dict: Dict[str, Any]) -> int:
     try:
-        return _run(pipeline_dict)
+        pl = pdal.Pipeline(json.dumps(pipeline_dict))
+        pc = pl.execute()
+        return pc
     except Exception as e:
-        msg = str(e)
-        # Detect missing plugin for duplicate/unique filters and retry without them
-        if FilterType.UNIQUE in msg or FilterType.DUPLICATE in msg:
-            # Remove any duplicate/unique stages and retry once
-            stages = [
-                s
-                for s in pipeline_dict.get("pipeline", [])
-                if not (
-                        isinstance(s, dict)
-                        and s.get("type") in {FilterType.UNIQUE, FilterType.DUPLICATE}
-                )
-            ]
-            retry_dict = {"pipeline": stages}
-            try:
-                result = _run(retry_dict)
-                result["note"] = (
-                    "Duplicate/unique filter unavailable; executed without it."
-                )
-                return result
-            except Exception as e2:
-                return {"success": False, "error": str(e2), "log": ""}
-        # Generic failure path
-        return {"success": False, "error": msg, "log": ""}
+        print(f"   PDAL Error: {e}")
+        return 0
+
+def save_report(output_dir: str, file_name: str, opt: FilterOptions, total_pts: int):
+    report_path = os.path.join(output_dir, "processing_report.txt")
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    content = (
+        f"[{timestamp}] Product: {file_name} | Preset: {opt.preset_name} | Points: {total_pts} | "
+        f"Settings: Range={opt.range_dist.max_distance}m, Inc={opt.incidence.min_angle}-{opt.incidence.max_angle}deg, "
+        f"Voxel={opt.voxel.cell_size}m, ColorClean={opt.color_clean}\n"
+    )
+    with open(report_path, "a", encoding="utf-8") as f:
+        f.write(content)
