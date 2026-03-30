@@ -46,7 +46,7 @@ wheels = [
 ]
 
 [[package]]
-name = "gq-pointcloud"
+name = "gq-filter"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
