@@ -1,0 +1,14 @@
+.git
+.venv
+.idea
+dist
+dist.bak
+build
+output.las
+clamped.las
+temp
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+build_venv_*

@@ -1,0 +1,24 @@
+# Test Dockerfile - verifies gq-filter works on Ubuntu
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH=/opt/conda/bin:$PATH
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget ca-certificates bzip2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install miniforge (auto-detect architecture)
+RUN ARCH=$(uname -m) \
+    && wget -q "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-${ARCH}.sh" -O /tmp/miniforge.sh \
+    && bash /tmp/miniforge.sh -b -p /opt/conda \
+    && rm /tmp/miniforge.sh
+
+# Install PDAL + Python from conda-forge
+RUN conda install -y -c conda-forge python=3.12 pdal python-pdal pytest \
+    && conda clean -afy
+
+WORKDIR /app
+COPY . /app
+
+CMD ["bash"]
