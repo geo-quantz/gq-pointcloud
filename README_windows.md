@@ -1,82 +1,51 @@
 # Windows Distribution Guide - PDAL Filter CLI
 
-This document describes how to build and run the `pdal_filter` tool as a standalone Windows executable.
+このドキュメントでは、`gq-filter` をスタンドアロンの Windows 実行ファイル (EXE) としてビルドし、配布する方法について説明します。
+基本的なセットアップと使用方法については、ルートの [README.md](../README.md) を参照してください。
 
-## Prerequisites
+## ビルド環境の準備
 
-To build the executable, you need a Windows machine with the following installed:
+スタンドアロン実行ファイルを作成するには、以下のツールが必要です：
 
-- **Python 3.9+**: [python.org](https://www.python.org/) (ensure "Add Python to PATH" is checked during installation).
-- **PDAL**: It is highly recommended to use a Conda environment if you need specific PDAL drivers or plugins.
-  Alternatively, you can install the `pdal` Python package via pip, which usually includes the basic DLLs.
-- **Git** (optional): To clone the repository.
+- **Python 3.10+**
+- **PDAL**: DLLを同梱するため、Conda環境（`gq-pdal`等）にインストールされている必要があります。
+- **WiX Toolset v3** (MSIインストーラを作成する場合のみ)
 
-## Build Instructions
+## ビルド手順
 
-1. **Open PowerShell or Command Prompt** in the project root directory.
-2. **Run the build script**:
-    - Via PowerShell:
-      ```powershell
-      .\scripts\build_windows.ps1
-      ```
-    - Via Batch (double-click or run):
-      ```cmd
-      scripts\build_windows.bat
-      ```
+1. **プロジェクトのルートディレクトリで PowerShell を開きます。**
+2. **ビルドスクリプトを実行します**:
+    ```powershell
+    .\scripts\build_windows.ps1
+    ```
 
-The script will:
+このスクリプトは以下の処理を行います：
+- ビルド専用の仮想環境 (`.venv-build`) を作成。
+- `pyinstaller`, `pdal`, および本パッケージをインストール。
+- `packaging/pdal_filter.spec` を使用して、必要な DLL をすべて同梱した実行ファイルディレクトリを `dist\pdal_filter\` に生成。
+- `pdal_filter.exe --help` による正常性確認。
 
-- Create a temporary virtual environment (`.venv-build`).
-- Install `pyinstaller`, `pdal`, and the current package.
-- Generate a standalone executable using the configuration in `packaging/pdal_filter.spec`.
-- Perform a sanity check by running `pdal_filter.exe --help`.
+## MSI インストーラの作成 (オプション)
 
-## Optional: Create MSI Installer
-
-If you have the **WiX Toolset v3** installed, you can generate a Windows Installer (MSI) that adds the tool to the
-system PATH:
-
-1. **Run the MSI build script**:
-   ```powershell
-   .\scripts\build_msi.ps1
-   ```
-2. The installer will be created at `dist\pdal_filter.msi`.
-
-## Output Artifacts
-
-After a successful build, the directory containing the executable and its dependencies will be located at:
-`dist\pdal_filter\`
-
-The executable is `dist\pdal_filter\pdal_filter.exe`.
-
-## Usage
-
-You can run the executable from any terminal:
-
-```cmd
-dist\pdal_filter\pdal_filter.exe --input input.las --output output.las --intensity-min 100 --deduplicate
+WiX Toolset がインストールされている場合、以下のスクリプトで MSI インストーラを作成できます。これにより、ツールがシステム PATH に自動的に追加されます。
+```powershell
+.\scripts\build_msi.ps1
 ```
+インストーラは `dist\pdal_filter.msi` に生成されます。
 
-## Troubleshooting PDAL DLLs
+## 出力物の構成
 
-PDAL is a complex C++ library with many runtime dependencies (DLLs) and plugins.
+ビルド成功後、`dist\pdal_filter\` ディレクトリに以下が含まれます：
+- `pdal_filter.exe`: メインの実行ファイル
+- `pdalcpp.dll`, `libpdal_plugin_*.dll` 等: PDALの動作に必要なDLL群
 
-### Missing DLLs / "Entry Point Not Found"
+## 配布時の注意点
 
-If the EXE fails to launch due to missing DLLs:
+- **DLLの依存関係**: `pdal_filter.spec` は、ビルド時にアクティブな Conda 環境から DLL を収集するように設定されています。特定のドライバ（E57など）が必要な場合は、ビルド環境にそれらがインストールされていることを確認してください。
+- **ディレクトリ配布**: `--onedir` 形式でビルドしているため、配布時は `dist\pdal_filter\` フォルダをまるごと配布する必要があります。
 
-1. **Conda Users**: Ensure you are running the build script from within an active Conda environment where PDAL is
-   installed. The spec file is designed to automatically detect and bundle DLLs from `$env:CONDA_PREFIX\Library\bin`.
-2. **Pip Users**: The `pdal` wheel from PyPI usually bundles core DLLs. However, some drivers (like E57 or certain
-   database drivers) might require manual bundling if they are not part of the standard wheel.
-3. **One-File vs One-Dir**: We use `--onedir` (directory distribution). This significantly improves startup
-   performance compared to `--onefile`, as the application doesn't need to decompress itself to a temporary
-   folder on every run.
+## トラブルシューティング
 
-### Filter/Writer Not Found
-
-If the tool runs but reports that a specific filter or writer is missing (e.g., `writers.copc`):
-
-- This usually means the required PDAL plugin (DLL) was not bundled or is not found in the search path.
-- Check if the DLL exists in your environment and ensure it's being picked up by the `binaries` list in
-  `packaging/pdal_filter.spec`.
+### 起動時に DLL が見つからないエラーが出る場合
+- `packaging/pdal_filter.spec` 内の `conda_prefix` の解決が正しく行われているか確認してください。
+- ビルド時に正しい Conda 環境がアクティブになっている必要があります。

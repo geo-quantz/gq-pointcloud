@@ -3,12 +3,15 @@ name = "gq-pointcloud"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.10"
 dependencies = [
     "black>=25.12.0",
-    "pdal>=3.5.3",
+    "pdal>=2.9.0",
     "pytest>=9.0.2",
 ]
+
+[project.scripts]
+gq-filter = "main:main"
 
 [dependency-groups]
 dev = [

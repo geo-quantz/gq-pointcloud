@@ -1,5 +1,9 @@
 import json
 import os
+import sys
+
+# Add the project root to sys.path so we can import lib.filter
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lib.filter import (
     FilterOptions,
@@ -12,10 +16,10 @@ from lib.filter import (
 )
 
 
-def test_pipeline_builder():
-    print("Testing pipeline builder...")
+def test_pipeline_builder_with_faux():
+    print("Testing pipeline builder using PDAL readers.faux...")
 
-    # 1. Define parameters
+    # 1. Define parameters for all filters
     options = FilterOptions(
         incidence=IncidenceAngleParams(max_angle=15.0),
         intensity=IntensityParams(min_intensity=10, max_intensity=500),
@@ -23,45 +27,43 @@ def test_pipeline_builder():
         duplicate=DuplicateParams(),
     )
 
-    # 2. Build pipeline
-    input_file = "../clamped.las"
+    # 2. Use readers.faux instead of a real file
+    # This generates 100 points in memory for testing.
+    input_faux = {
+        "type": "readers.faux",
+        "count": 100,
+        "mode": "random"
+    }
     output_file = "test_output.las"
 
-    # Ensure input file exists or use a dummy for structure test
-    if not os.path.exists(input_file):
-        print(
-            f"Warning: {input_file} not found. Test will only verify dictionary structure."
-        )
-        # Create a tiny valid LAS if possible? Better to just check dict.
-
-    pipeline_dict = build_pipeline(input_file, output_file, options)
+    pipeline_dict = build_pipeline(input_faux, output_file, options)
 
     print("Generated Pipeline Dictionary:")
     print(json.dumps(pipeline_dict, indent=2))
 
-    # Verify structure
+    # Verify dictionary structure
     assert "pipeline" in pipeline_dict
-    assert len(pipeline_dict["pipeline"]) == 6  # input + 4 filters + writer
-    assert pipeline_dict["pipeline"][0] == input_file
+    assert len(pipeline_dict["pipeline"]) == 6  # faux reader + 4 filters + writer
+    assert pipeline_dict["pipeline"][0] == input_faux
     assert pipeline_dict["pipeline"][-1]["type"] == "writers.las"
 
     print("Pipeline dictionary structure verified.")
 
-    # 3. Test execution (only if file exists)
-    if os.path.exists(input_file):
-        print("\nExecuting pipeline...")
+    # 3. Attempt execution if PDAL is functional in this environment
+    try:
+        import pdal
+        print("\nAttempting to execute pipeline with PDAL...")
         result = execute_pipeline(pipeline_dict)
+        
         if result["success"]:
-            print(f"Success! Processed {result['points_processed']} points.")
+            print(f"Execution Success! Processed {result['points_processed']} points.")
+            # Clean up dummy output if it was actually created
             if os.path.exists(output_file):
-                print(f"Output file {output_file} created.")
                 os.remove(output_file)
         else:
-            print(f"Pipeline execution failed: {result['error']}")
-            # It might fail if 'Distance' dimension is missing, which is expected for standard LAS.
-            if "Distance" in result["error"]:
-                print("Note: 'Distance' dimension failure is expected if not in LAS.")
-
+            print(f"Pipeline execution failed (this is expected if PDAL environment is partial): {result['error']}")
+    except ImportError:
+        print("\nPDAL Python library not found. Skipping execution test, but structure is valid.")
 
 if __name__ == "__main__":
-    test_pipeline_builder()
+    test_pipeline_builder_with_faux()
