@@ -56,25 +56,25 @@ currently outside the scope of this script.
 
 ## Gatekeeper and Security
 
-Because the resulting binary is unsigned, macOS Gatekeeper may block it from running.
+GitHub Release からダウンロードしたバイナリは、macOS Gatekeeper によってブロックされます（Apple Developer ID で署名・公証されていないため）。
 
-### Running for the first time
+### ダウンロード後の初回実行手順
 
-1. Locate `gqfilter` in Finder.
-2. Right-click (or Control-click) the application and choose **Open**.
-3. In the dialog that appears, click **Open**.
-
-Alternatively, you can remove the quarantine attribute via terminal (this is only needed if you downloaded the binary):
+zip を展開したら、**実行前に** 以下のコマンドで quarantine 属性を再帰的に除去してください。
+gqfilter 本体だけでなく `_internal/` 内の全 dylib にも quarantine が付いているため、`-cr`（再帰）が必要です。
 
 ```bash
-# Check if the attribute exists first
-xattr dist/gqfilter/gqfilter
+# 展開したディレクトリに移動
+cd <展開先>
 
-# Remove it if com.apple.quarantine is listed
-xattr -d com.apple.quarantine dist/gqfilter/gqfilter
+# quarantine 属性を再帰的に除去
+xattr -cr ./gqfilter
+
+# 実行確認
+./gqfilter/gqfilter --help
 ```
 
-*Note: If you built the binary locally using the build script, it will not have the quarantine attribute.*
+> **注意**: ローカルで `scripts/build_macos.sh` を使ってビルドした場合は quarantine 属性が付かないため、この手順は不要です。
 
 ## Usage
 
