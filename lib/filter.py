@@ -326,10 +326,22 @@ def build_color_cleaning_stages(params: Optional[ColorCleanParams]) -> List[Dict
 
 def build_duplicate_filter(
         params: Optional[DuplicateParams],
-) -> Optional[Dict[str, Any]]:
+) -> Optional[list]:
+    """Conditionally build duplicate removal filter.
+
+    Uses filters.label_duplicates (available in standard PDAL builds) to mark
+    exact XYZ duplicates via the Withheld flag, then removes them via
+    filters.expression. Replaces filters.unique which is not bundled in all
+    PDAL distributions (e.g. Homebrew PDAL 2.10.x).
+
+    Returns a list of pipeline stages, or None when disabled.
+    """
     if not params or not params.enabled:
         return None
-    return {"type": FilterType.UNIQUE, "keep_first": True}
+    return [
+        {"type": "filters.label_duplicates"},
+        {"type": FilterType.EXPRESSION, "expression": "Withheld == 0"},
+    ]
 
 
 # -------------------------------
@@ -379,7 +391,11 @@ def build_pipeline(
 
     # 6. Duplicate Removal
     f_dup = build_duplicate_filter(filter_params.duplicate)
-    if f_dup: stages.append(f_dup)
+    if f_dup:
+        if isinstance(f_dup, list):
+            stages.extend(f_dup)
+        else:
+            stages.append(f_dup)
 
     # Writer selection
 #    ext_out = os.path.splitext(output_path)[1].lower()
