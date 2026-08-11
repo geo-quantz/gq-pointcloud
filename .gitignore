@@ -93,9 +93,15 @@ build_venv_*/
 build.log
 gqfilter/
 
-# Local test data
+# Local test data (large files stay local; fixtures go via Git LFS)
 *.las
-!tests/**/*.las
+*.laz
+!tests/fixtures/*.las
+!tests/fixtures/*.laz
+
+# Raw / reference data — large files stay local
+data/raw/*
+!data/raw/README.md
 
 # Scratch/temp
 temp/
