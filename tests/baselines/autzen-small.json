@@ -1,0 +1,38 @@
+{
+  "incidence_angle_15": {
+    "point_count_in": 7388,
+    "point_count_out": 7388,
+    "removal_rate": 0.0,
+    "elapsed_sec": 0.1876,
+    "peak_memory_mb": 0.0,
+    "env_tag": "darwin-arm64-Kentaros-MacBook-Pro",
+    "accuracy_note": ""
+  },
+  "intensity_10_500": {
+    "point_count_in": 7388,
+    "point_count_out": 9,
+    "removal_rate": 0.998782,
+    "elapsed_sec": 0.1836,
+    "peak_memory_mb": 0.0,
+    "env_tag": "darwin-arm64-Kentaros-MacBook-Pro",
+    "accuracy_note": ""
+  },
+  "duplicate_removal": {
+    "point_count_in": 7388,
+    "point_count_out": 7388,
+    "removal_rate": 0.0,
+    "elapsed_sec": 0.1859,
+    "peak_memory_mb": 0.0,
+    "env_tag": "darwin-arm64-Kentaros-MacBook-Pro",
+    "accuracy_note": ""
+  },
+  "combined_all": {
+    "point_count_in": 7388,
+    "point_count_out": 9,
+    "removal_rate": 0.998782,
+    "elapsed_sec": 0.1813,
+    "peak_memory_mb": 0.0,
+    "env_tag": "darwin-arm64-Kentaros-MacBook-Pro",
+    "accuracy_note": ""
+  }
+}
