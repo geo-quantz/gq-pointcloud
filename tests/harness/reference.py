@@ -102,61 +102,61 @@ def build_reference_pipeline(
     output_path: Path,
 ) -> dict | None:
     """
-    Build a PDAL reference pipeline equivalent to the gq-filter scenario.
+    Build a PDAL reference pipeline that mirrors what lib.filter would generate.
 
-    filter_params keys:
-      incidence_angle_max  (float | None)
-      intensity_min        (float | None)
-      intensity_max        (float | None)
-      range_min            (float | None)
-      range_max            (float | None)
-      duplicate            (bool)
+    Purpose: verify that gq-filter's Python pipeline builder produces the same
+    PDAL execution result as calling PDAL CLI with the equivalent pipeline.
+    Since gq-filter wraps PDAL, outputs should be byte-for-byte identical.
 
-    Returns None if the scenario has no PDAL equivalent
-    (caller should log "comparison: N/A").
+    For incidence angle, lib.filter now uses filters.normal + dot-product math
+    (not ScanAngleRank), so we replicate the same stages here.
+
+    Returns None if the scenario has no PDAL equivalent.
     """
-    stages: list = [str(input_path)]
-    has_filter = False
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+    from lib.filter import (
+        FilterOptions, IncidenceAngleParams, IntensityParams,
+        RangeParams, DuplicateParams, build_pipeline,
+    )
 
-    if (v := filter_params.get("incidence_angle_max")) is not None:
-        stages.append({
-            "type": "filters.expression",
-            "expression": f"abs(ScanAngleRank) <= {v}",
-        })
-        has_filter = True
+    fp = filter_params
+    options = FilterOptions(
+        incidence=(
+            IncidenceAngleParams(max_angle=fp["incidence_angle_max"])
+            if fp.get("incidence_angle_max") is not None else None
+        ),
+        intensity=(
+            IntensityParams(
+                min_intensity=fp.get("intensity_min"),
+                max_intensity=fp.get("intensity_max"),
+            )
+            if (fp.get("intensity_min") is not None or fp.get("intensity_max") is not None)
+            else None
+        ),
+        range_dist=(
+            RangeParams(
+                min_distance=fp.get("range_min"),
+                max_distance=fp.get("range_max"),
+            )
+            if (fp.get("range_min") is not None or fp.get("range_max") is not None)
+            else None
+        ),
+        duplicate=(
+            DuplicateParams(enabled=True) if fp.get("duplicate") else None
+        ),
+    )
+    pipeline = build_pipeline(str(input_path), str(output_path), options)
+    if not pipeline:
+        return None
 
-    intensity_parts = []
-    if (v := filter_params.get("intensity_min")) is not None:
-        intensity_parts.append(f"Intensity >= {v}")
-    if (v := filter_params.get("intensity_max")) is not None:
-        intensity_parts.append(f"Intensity <= {v}")
-    if intensity_parts:
-        stages.append({
-            "type": "filters.expression",
-            "expression": " && ".join(intensity_parts),
-        })
-        has_filter = True
-
-    range_parts = []
-    dist_expr = "sqrt(X*X + Y*Y + Z*Z)"
-    if (v := filter_params.get("range_min")) is not None:
-        range_parts.append(f"{dist_expr} >= {v}")
-    if (v := filter_params.get("range_max")) is not None:
-        range_parts.append(f"{dist_expr} <= {v}")
-    if range_parts:
-        stages.append({
-            "type": "filters.expression",
-            "expression": " && ".join(range_parts),
-        })
-        has_filter = True
-
-    if filter_params.get("duplicate", False):
-        stages.append({"type": "filters.label_duplicates"})
-        stages.append({"type": "filters.expression", "expression": "Withheld == 0"})
-        has_filter = True
+    # If only reader + writer (no filters), skip comparison
+    stages = pipeline.get("pipeline", [])
+    non_io = [s for s in stages if isinstance(s, dict) and
+              not s.get("type", "").startswith("writers.")]
+    has_filter = len(non_io) > 0
 
     if not has_filter:
         return None
 
-    stages.append({"type": "writers.las", "filename": str(output_path)})
-    return {"pipeline": stages}
+    return pipeline

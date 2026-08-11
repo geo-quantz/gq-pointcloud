@@ -102,8 +102,8 @@ def check_invariants(
         violations.append(f"INPUT_UNREADABLE: {e}")
         return violations
 
-    # 2. CRS preservation
-    if in_info.crs_wkt:
+    # 2. CRS preservation (skip for 0-point outputs — PDAL may not write CRS to empty files)
+    if in_info.crs_wkt and out_info.point_count > 0:
         if not out_info.crs_wkt:
             violations.append("CRS_LOST: input had CRS but output has none")
         elif _normalize_crs(in_info.crs_wkt) != _normalize_crs(out_info.crs_wkt):

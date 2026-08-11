@@ -2,11 +2,20 @@ import json
 import os
 import platform
 import subprocess
-import pye57
-import numpy as np
+import math
 from datetime import datetime
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, List, Tuple, Union
+
+# pye57 and numpy are optional — only required for E57 support.
+# Import them lazily inside the functions that need them so that
+# environments without these packages (e.g. the test harness) can still
+# import and use the pure-Python pipeline builders.
+try:
+    import numpy as np
+    _HAS_NUMPY = True
+except ImportError:
+    _HAS_NUMPY = False
 
 # -------------------------------
 # Windows DLL Resolution
@@ -18,7 +27,9 @@ if platform.system() == "Windows":
     if pdal_dll_path and os.path.exists(pdal_dll_path):
         os.add_dll_directory(pdal_dll_path)
 
-import pdal
+# pdal Python bindings are only needed in execute_pipeline().
+# Importing here is deferred to avoid breaking environments where the
+# bindings are unavailable (e.g. test harness using PDAL CLI directly).
 
 
 # -------------------------------
@@ -111,8 +122,9 @@ def get_origin_auto(path: str) -> Optional[Tuple[float, float, float]]:
     """
     if not path.lower().endswith(".e57"):
         return None
-        
+
     try:
+        import pye57  # lazy import — only needed for E57 files
         e57 = pye57.E57(path)
         
         # 引用いただいたコードの通り、0番目のスキャンのヘッダーを取得
@@ -206,14 +218,14 @@ def build_incidence_angle_filter(
     
     # max_angle の制限 (grazing angle の確保)
     if params.max_angle < 90.0:
-        cos_max = np.cos(np.radians(params.max_angle))
+        cos_max = math.cos(math.radians(params.max_angle))
         cos_max_sq = float(cos_max * cos_max)
         # (内積の2乗) >= (距離の2乗) * (cos(最大角)の2乗)
         conds.append(f"({dot_sq_expr} >= {dist_sq_expr} * {cos_max_sq:.8f})")
-        
+
     # min_angle の制限
     if params.min_angle > 0.0:
-        cos_min = np.cos(np.radians(params.min_angle))
+        cos_min = math.cos(math.radians(params.min_angle))
         cos_min_sq = float(cos_min * cos_min)
         # (内積の2乗) <= (距離の2乗) * (cos(最小角)の2乗)
         conds.append(f"({dot_sq_expr} <= {dist_sq_expr} * {cos_min_sq:.8f})")
@@ -445,6 +457,8 @@ def build_pipeline(
 
 def execute_pipeline(pipeline_dict: Dict[str, Any]) -> Dict[str, Any]:
     """Execute a PDAL pipeline from a Python dictionary."""
+    import pdal  # lazy import — PDAL Python bindings only needed here
+
     def _run(pdict: Dict[str, Any]) -> Dict[str, Any]:
         pl = pdal.Pipeline(json.dumps(pdict))
         pc = pl.execute()
