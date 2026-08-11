@@ -20,10 +20,9 @@ from tests.harness.invariants import pdal_info
 
 
 def _env_tag() -> str:
-    """Short tag identifying the execution environment."""
+    """Short tag identifying the execution environment (no hostname)."""
     machine = platform.machine()  # arm64 / x86_64
-    node = platform.node().split(".")[0]  # hostname prefix
-    return f"{platform.system().lower()}-{machine}-{node}"
+    return f"{platform.system().lower()}-{machine}-local"
 
 
 @dataclass
