@@ -1,9 +1,9 @@
 {
   "incidence_angle_15": {
     "point_count_in": 7388,
-    "point_count_out": 7388,
-    "removal_rate": 0.0,
-    "elapsed_sec": 0.1876,
+    "point_count_out": 5,
+    "removal_rate": 0.999323,
+    "elapsed_sec": 0.2249,
     "peak_memory_mb": 0.0,
     "env_tag": "darwin-arm64-local",
     "accuracy_note": ""
@@ -12,7 +12,7 @@
     "point_count_in": 7388,
     "point_count_out": 9,
     "removal_rate": 0.998782,
-    "elapsed_sec": 0.1836,
+    "elapsed_sec": 0.1817,
     "peak_memory_mb": 0.0,
     "env_tag": "darwin-arm64-local",
     "accuracy_note": ""
@@ -21,16 +21,16 @@
     "point_count_in": 7388,
     "point_count_out": 7388,
     "removal_rate": 0.0,
-    "elapsed_sec": 0.1859,
+    "elapsed_sec": 0.185,
     "peak_memory_mb": 0.0,
     "env_tag": "darwin-arm64-local",
     "accuracy_note": ""
   },
   "combined_all": {
     "point_count_in": 7388,
-    "point_count_out": 9,
-    "removal_rate": 0.998782,
-    "elapsed_sec": 0.1813,
+    "point_count_out": 0,
+    "removal_rate": 1.0,
+    "elapsed_sec": 0.2085,
     "peak_memory_mb": 0.0,
     "env_tag": "darwin-arm64-local",
     "accuracy_note": ""
