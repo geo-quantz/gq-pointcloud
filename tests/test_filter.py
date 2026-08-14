@@ -7,7 +7,9 @@ from lib.filter import (
     IntensityParams,
     RangeParams,
     DuplicateParams,
+    ClassificationParams,
     build_pipeline,
+    build_classification_filter,
     execute_pipeline,
 )
 
@@ -61,6 +63,39 @@ def test_pipeline_builder():
             # It might fail if 'Distance' dimension is missing, which is expected for standard LAS.
             if "Distance" in result["error"]:
                 print("Note: 'Distance' dimension failure is expected if not in LAS.")
+
+
+def test_classification_filter_disabled():
+    assert build_classification_filter(None) is None
+    assert build_classification_filter(ClassificationParams(enabled=False)) is None
+    assert build_classification_filter(ClassificationParams(keep_codes=[])) is None
+
+
+def test_classification_filter_single_code():
+    stage = build_classification_filter(ClassificationParams(keep_codes=[2]))
+    assert stage is not None
+    assert stage["type"] == "filters.expression"
+    assert "Classification == 2" in stage["expression"]
+
+
+def test_classification_filter_multiple_codes():
+    stage = build_classification_filter(ClassificationParams(keep_codes=[2, 6, 9]))
+    assert stage is not None
+    expr = stage["expression"]
+    assert "Classification == 2" in expr
+    assert "Classification == 6" in expr
+    assert "Classification == 9" in expr
+    assert "||" in expr
+
+
+def test_pipeline_includes_classification():
+    options = FilterOptions(
+        classification=ClassificationParams(keep_codes=[2, 6]),
+    )
+    pipeline = build_pipeline("input.las", "output.las", options)
+    stages = pipeline["pipeline"]
+    expr_stages = [s for s in stages if isinstance(s, dict) and s.get("type") == "filters.expression"]
+    assert any("Classification" in s.get("expression", "") for s in expr_stages)
 
 
 if __name__ == "__main__":
