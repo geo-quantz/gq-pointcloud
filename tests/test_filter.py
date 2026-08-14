@@ -7,7 +7,9 @@ from lib.filter import (
     IntensityParams,
     RangeParams,
     DuplicateParams,
+    RadiusOutlierParams,
     build_pipeline,
+    build_radius_outlier_filter,
     execute_pipeline,
 )
 
@@ -61,6 +63,38 @@ def test_pipeline_builder():
             # It might fail if 'Distance' dimension is missing, which is expected for standard LAS.
             if "Distance" in result["error"]:
                 print("Note: 'Distance' dimension failure is expected if not in LAS.")
+
+
+def test_radius_outlier_filter_disabled():
+    assert build_radius_outlier_filter(None) is None
+    assert build_radius_outlier_filter(RadiusOutlierParams(enabled=False)) is None
+
+
+def test_radius_outlier_filter_defaults():
+    stage = build_radius_outlier_filter(RadiusOutlierParams())
+    assert stage is not None
+    assert stage["type"] == "filters.outlier"
+    assert stage["method"] == "radius"
+    assert stage["radius"] == 1.0
+    assert stage["min_k"] == 2
+
+
+def test_radius_outlier_filter_custom():
+    stage = build_radius_outlier_filter(RadiusOutlierParams(radius=0.5, min_k=5))
+    assert stage["radius"] == 0.5
+    assert stage["min_k"] == 5
+
+
+def test_pipeline_includes_radius_outlier():
+    options = FilterOptions(
+        radius_outlier=RadiusOutlierParams(radius=0.5, min_k=3),
+    )
+    pipeline = build_pipeline("input.las", "output.las", options)
+    stages = pipeline["pipeline"]
+    types = [s.get("type") for s in stages if isinstance(s, dict)]
+    assert "filters.outlier" in types
+    outlier_stage = next(s for s in stages if isinstance(s, dict) and s.get("type") == "filters.outlier")
+    assert outlier_stage["method"] == "radius"
 
 
 if __name__ == "__main__":
