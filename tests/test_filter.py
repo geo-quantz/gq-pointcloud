@@ -7,7 +7,9 @@ from lib.filter import (
     IntensityParams,
     RangeParams,
     DuplicateParams,
+    SpatialClipParams,
     build_pipeline,
+    build_spatial_clip_filter,
     execute_pipeline,
 )
 
@@ -61,6 +63,51 @@ def test_pipeline_builder():
             # It might fail if 'Distance' dimension is missing, which is expected for standard LAS.
             if "Distance" in result["error"]:
                 print("Note: 'Distance' dimension failure is expected if not in LAS.")
+
+
+def test_spatial_clip_disabled():
+    assert build_spatial_clip_filter(None) is None
+    assert build_spatial_clip_filter(SpatialClipParams(enabled=False)) is None
+    assert build_spatial_clip_filter(SpatialClipParams()) is None
+
+
+def test_spatial_clip_xy_only():
+    params = SpatialClipParams(x_min=100.0, x_max=200.0, y_min=50.0, y_max=150.0)
+    stage = build_spatial_clip_filter(params)
+    assert stage is not None
+    assert stage["type"] == "filters.crop"
+    bounds = stage["bounds"]
+    assert "[100.0,200.0]" in bounds
+    assert "[50.0,150.0]" in bounds
+    assert "inf" not in bounds.replace("-inf", "")
+
+
+def test_spatial_clip_with_z():
+    params = SpatialClipParams(x_min=0.0, x_max=10.0, y_min=0.0, y_max=10.0, z_min=1.0, z_max=5.0)
+    stage = build_spatial_clip_filter(params)
+    assert stage is not None
+    bounds = stage["bounds"]
+    assert "[1.0,5.0]" in bounds
+
+
+def test_spatial_clip_partial_bounds():
+    params = SpatialClipParams(x_min=100.0, y_max=200.0)
+    stage = build_spatial_clip_filter(params)
+    assert stage is not None
+    bounds = stage["bounds"]
+    assert "100.0" in bounds
+    assert "200.0" in bounds
+    assert "-inf" in bounds or "inf" in bounds
+
+
+def test_pipeline_includes_spatial_clip():
+    options = FilterOptions(
+        spatial_clip=SpatialClipParams(x_min=0.0, x_max=100.0, y_min=0.0, y_max=100.0),
+    )
+    pipeline = build_pipeline("input.las", "output.las", options)
+    stages = pipeline["pipeline"]
+    types = [s.get("type") for s in stages if isinstance(s, dict)]
+    assert "filters.crop" in types
 
 
 if __name__ == "__main__":
