@@ -351,20 +351,29 @@ def build_color_cleaning_stages(params: Optional[ColorCleanParams]) -> List[Dict
 
 def build_statistical_outlier_filter(
         params: Optional[StatisticalOutlierParams],
-) -> Optional[Dict[str, Any]]:
+) -> Optional[List[Dict[str, Any]]]:
     """Build a statistical outlier removal stage using filters.outlier.
 
-    Points whose mean distance to their k nearest neighbors exceeds
-    (global_mean + multiplier * std_dev) are removed.
+    PDAL's filters.outlier marks outliers as Classification=7 (noise) rather
+    than removing them. A follow-up filters.expression is therefore required
+    to actually drop those points from the output.
+
+    Returns a two-stage list: [filters.outlier, filters.expression].
     """
     if not params or not params.enabled:
         return None
-    return {
-        "type": "filters.outlier",
-        "method": "statistical",
-        "mean_k": params.mean_k,
-        "multiplier": params.multiplier,
-    }
+    return [
+        {
+            "type": "filters.outlier",
+            "method": "statistical",
+            "mean_k": params.mean_k,
+            "multiplier": params.multiplier,
+        },
+        {
+            "type": FilterType.EXPRESSION,
+            "expression": "Classification != 7",
+        },
+    ]
 
 
 def build_duplicate_filter(
@@ -430,7 +439,7 @@ def build_pipeline(
 
     # 5. Statistical Outlier Removal
     f_stat = build_statistical_outlier_filter(filter_params.statistical_outlier)
-    if f_stat: stages.append(f_stat)
+    if f_stat: stages.extend(f_stat)
 
     # 6. Voxel Downsampling
     f_vox = build_voxel_filter(filter_params.voxel)
