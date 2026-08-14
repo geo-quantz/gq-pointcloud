@@ -15,6 +15,7 @@ from lib.filter import (
     RangeParams,
     VoxelParams,
     ColorCleanParams,
+    RadiusSampleParams,
     build_pipeline,
     execute_pipeline,
     save_report,
@@ -198,6 +199,19 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help="Cell size for voxel centroid downsampling.",
     )
 
+    # Radius-based Thinning Group
+    sample_group = parser.add_argument_group("Radius-based Thinning (Poisson disk sampling)")
+    sample_group.add_argument(
+        "--sample-radius",
+        type=float,
+        metavar="R",
+        help=(
+            "Minimum spacing between retained points (filters.sample Poisson disk). "
+            "Alternative to --voxel-size: preserves actual coordinates without grid snapping. "
+            "e.g. --sample-radius 0.05  (50mm minimum spacing)"
+        ),
+    )
+
     # Color Cleaning Group
     color_group = parser.add_argument_group("Color Cleaning Filter")
     color_group.add_argument(
@@ -302,6 +316,11 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
     if args.deduplicate or args.merge:
         duplicate = DuplicateParams(enabled=True)
 
+    # Radius-based thinning
+    radius_sample = None
+    if args.sample_radius is not None:
+        radius_sample = RadiusSampleParams(radius=args.sample_radius)
+
     return FilterOptions(
         incidence=incidence,
         intensity=intensity,
@@ -309,6 +328,7 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
         voxel=voxel,
         color_clean=color_clean,
         duplicate=duplicate,
+        radius_sample=radius_sample,
         preset_name=args.preset
     )
 

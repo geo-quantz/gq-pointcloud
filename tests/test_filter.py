@@ -7,7 +7,9 @@ from lib.filter import (
     IntensityParams,
     RangeParams,
     DuplicateParams,
+    RadiusSampleParams,
     build_pipeline,
+    build_radius_sample_filter,
     execute_pipeline,
 )
 
@@ -61,6 +63,44 @@ def test_pipeline_builder():
             # It might fail if 'Distance' dimension is missing, which is expected for standard LAS.
             if "Distance" in result["error"]:
                 print("Note: 'Distance' dimension failure is expected if not in LAS.")
+
+
+def test_radius_sample_filter_disabled():
+    assert build_radius_sample_filter(None) is None
+    assert build_radius_sample_filter(RadiusSampleParams(enabled=False)) is None
+
+
+def test_radius_sample_filter_defaults():
+    stage = build_radius_sample_filter(RadiusSampleParams())
+    assert stage is not None
+    assert stage["type"] == "filters.sample"
+    assert stage["radius"] == 0.05
+
+
+def test_radius_sample_filter_custom():
+    stage = build_radius_sample_filter(RadiusSampleParams(radius=0.1))
+    assert stage["radius"] == 0.1
+
+
+def test_pipeline_includes_radius_sample():
+    options = FilterOptions(radius_sample=RadiusSampleParams(radius=0.05))
+    pipeline = build_pipeline("input.las", "output.las", options)
+    stages = pipeline["pipeline"]
+    types = [s.get("type") for s in stages if isinstance(s, dict)]
+    assert "filters.sample" in types
+
+
+def test_pipeline_voxel_and_radius_sample_coexist():
+    from lib.filter import VoxelParams
+    options = FilterOptions(
+        voxel=VoxelParams(cell_size=0.01),
+        radius_sample=RadiusSampleParams(radius=0.05),
+    )
+    pipeline = build_pipeline("input.las", "output.las", options)
+    stages = pipeline["pipeline"]
+    types = [s.get("type") for s in stages if isinstance(s, dict)]
+    assert "filters.voxelcentroidnearestneighbor" in types
+    assert "filters.sample" in types
 
 
 if __name__ == "__main__":
