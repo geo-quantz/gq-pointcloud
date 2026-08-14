@@ -59,11 +59,79 @@ python main.py --preset tls --merge
 ※ 個別の引数（例: `--range-max 50`）を指定することで、プリセット値の一部を上書き可能です。
 
 #### フィルタ詳細
+
+**既存フィルター**
 - **入射角**: `--incidence-angle-min`, `--incidence-angle-max`
 - **距離**: `--range-min`, `--range-max`, `--origin X Y Z` (器械点手動指定)
 - **色**: `--color-clean` (有効化), `--ortho-path <path>`, `--color-threshold <float>`
-- **間引き**: `--voxel-size`
-- **除去**: `--deduplicate`
+- **間引き (ボクセル)**: `--voxel-size`
+- **重複除去**: `--deduplicate`
+
+**追加フィルター (PR #6〜#12)**
+
+| フィルター | オプション | デフォルト値 | 説明 |
+| :--- | :--- | :--- | :--- |
+| 統計的外れ値除去 | `--outlier-statistical` | - | 近傍 k 点の平均距離が閾値超の点を削除 |
+|  | `--outlier-mean-k K` | 8 | 近傍点数 |
+|  | `--outlier-multiplier M` | 2.0 | 標準偏差の倍率閾値 |
+| 半径外れ値除去 | `--outlier-radius` | - | 半径 r 内に k 点未満の孤立点を削除 |
+|  | `--outlier-radius-value R` | 1.0 | 探索半径 |
+|  | `--outlier-min-k K` | 2 | 最低近傍点数 |
+| 分類コードフィルター | `--keep-classes C [C ...]` | - | 指定した分類コードの点のみ保持 |
+| リターン番号フィルター | `--keep-returns N [N ...]` | - | 指定したリターン番号のみ保持（例: `1` = 1st return のみ）|
+| 空間クリップ | `--clip-xmin`, `--clip-xmax` | - | X/Y/Z 境界ボックスで空間切り抜き |
+|  | `--clip-ymin`, `--clip-ymax` | - | |
+|  | `--clip-zmin`, `--clip-zmax` | - | |
+| 高さ(Z)フィルター | `--z-min`, `--z-max` | - | Z 値（高さ）の範囲で点群を絞り込み |
+| ポアソンディスク間引き | `--sample-radius R` | - | 半径 R 内に1点を保持するランダム間引き（座標変化なし） |
+
+> **注**: 統計的外れ値・半径外れ値フィルターは内部で2段階処理（`filters.outlier` → `filters.expression: Classification != 7`）を実行します。PDAL の `filters.outlier` は外れ値を `Classification=7` にマークするだけで削除しないため、後続の expression フィルターが必要です。
+
+#### 使用例
+
+```bash
+# 統計的外れ値を厳格に除去（k=16、1.5σ）
+python cli.py -i input.las -o output.las --outlier-statistical --outlier-mean-k 16 --outlier-multiplier 1.5
+
+# 地面点（Class 2）のみ抽出
+python cli.py -i input.las -o output.las --keep-classes 2
+
+# 1st リターンのみ・Z=440〜480m の範囲に絞り込み
+python cli.py -i input.las -o output.las --keep-returns 1 --z-min 440 --z-max 480
+
+# ポアソンディスクで 50cm 間隔に均一間引き
+python cli.py -i input.las -o output.las --sample-radius 0.5
+```
+
+## 評価レポート
+
+フィクスチャ: `tests/fixtures/autzen-small.laz`（7,388 pts、Oregon State Plane、単位: フィート）
+
+### 追加フィルター実測値
+
+| フィルター | 設定 | 入力 | 出力 | 除去率 |
+| :--- | :--- | ---: | ---: | ---: |
+| 統計的外れ値 | k=8, 2σ (デフォルト) | 7,388 | 7,262 | -1.7% |
+| 統計的外れ値 | k=16, 1.5σ (厳格) | 7,388 | 7,221 | -2.3% |
+| 半径外れ値 | r=1.0ft, min_k=2 (デフォルト) | 7,388 | 7,388 | 0.0% |
+| 半径外れ値 | r=0.5ft, min_k=5 (過剰) | 7,388 | 0 | ⚠️ 全点削除 |
+| 分類コード | Ground(2) のみ | 7,388 | 385 | -94.8% |
+| 分類コード | Ground(2) + Building(6) | 7,388 | 7,334 | -0.7% |
+| リターン番号 | 1st のみ | 7,388 | 7,361 | -0.4% |
+| リターン番号 | 1st + 2nd | 7,388 | 7,388 | 0.0% |
+| 空間クリップ | SW 象限 (XY) | 7,388 | 1,855 | -74.9% |
+| 空間クリップ | Z ≤ 460ft | 7,388 | 885 | -88.0% |
+| Z フィルター | Z ≥ 444.8ft | 7,388 | 7,365 | -0.3% |
+| Z フィルター | 下半分 (424〜461ft) | 7,388 | 885 | -88.0% |
+| ポアソン間引き | r=0.5ft (~15cm) | 7,388 | 4,474 | -39.4% |
+| ポアソン間引き | r=2.0ft (~60cm) | 7,388 | 430 | -94.2% |
+
+> ⚠️ 半径外れ値 `r=0.5ft / min_k=5` はデータ点密度に対して過剰な設定のため全点削除。PDAL も警告を出力します（仕様通りの動作）。実運用時は `r=1.0ft / min_k=2` 相当から始め、データに合わせて調整してください。
+
+評価スクリプトを使用してローカルデータで同様の計測を実行できます:
+```bash
+python tools/evaluate_new_filters.py
+```
 
 ## 開発とテスト
 ```powershell
