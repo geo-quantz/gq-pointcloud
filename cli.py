@@ -9,6 +9,7 @@ from lib.filter import (
     IncidenceAngleParams,
     IntensityParams,
     RangeParams,
+    HeightZParams,
     build_pipeline,
     execute_pipeline,
 )
@@ -67,6 +68,11 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help="Enable duplicate point removal (removes exact XYZ matches).",
     )
 
+    # Height (Z) Filter Group
+    z_group = parser.add_argument_group("Height (Z) Filter")
+    z_group.add_argument("--z-min", type=float, metavar="Z", help="Minimum absolute Z elevation to retain.")
+    z_group.add_argument("--z-max", type=float, metavar="Z", help="Maximum absolute Z elevation to retain.")
+
     return parser.parse_args(args)
 
 
@@ -99,11 +105,17 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
     if args.deduplicate:
         duplicate = DuplicateParams(enabled=True)
 
+    # Height (Z) filter
+    height_z = None
+    if args.z_min is not None or args.z_max is not None:
+        height_z = HeightZParams(z_min=args.z_min, z_max=args.z_max)
+
     return FilterOptions(
         incidence=incidence,
         intensity=intensity,
         range_dist=range_dist,
         duplicate=duplicate,
+        height_z=height_z,
     )
 
 

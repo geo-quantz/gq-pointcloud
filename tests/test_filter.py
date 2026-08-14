@@ -7,7 +7,9 @@ from lib.filter import (
     IntensityParams,
     RangeParams,
     DuplicateParams,
+    HeightZParams,
     build_pipeline,
+    build_height_z_filter,
     execute_pipeline,
 )
 
@@ -61,6 +63,44 @@ def test_pipeline_builder():
             # It might fail if 'Distance' dimension is missing, which is expected for standard LAS.
             if "Distance" in result["error"]:
                 print("Note: 'Distance' dimension failure is expected if not in LAS.")
+
+
+def test_height_z_filter_disabled():
+    assert build_height_z_filter(None) is None
+    assert build_height_z_filter(HeightZParams(enabled=False)) is None
+    assert build_height_z_filter(HeightZParams()) is None
+
+
+def test_height_z_filter_min_only():
+    stage = build_height_z_filter(HeightZParams(z_min=-5.0))
+    assert stage is not None
+    assert stage["type"] == "filters.expression"
+    assert "Z >= -5.0" in stage["expression"]
+    assert "Z <=" not in stage["expression"]
+
+
+def test_height_z_filter_max_only():
+    stage = build_height_z_filter(HeightZParams(z_max=100.0))
+    assert stage is not None
+    assert "Z <= 100.0" in stage["expression"]
+    assert "Z >=" not in stage["expression"]
+
+
+def test_height_z_filter_range():
+    stage = build_height_z_filter(HeightZParams(z_min=0.0, z_max=50.0))
+    assert stage is not None
+    expr = stage["expression"]
+    assert "Z >= 0.0" in expr
+    assert "Z <= 50.0" in expr
+    assert "&&" in expr
+
+
+def test_pipeline_includes_height_z():
+    options = FilterOptions(height_z=HeightZParams(z_min=-2.0, z_max=200.0))
+    pipeline = build_pipeline("input.las", "output.las", options)
+    stages = pipeline["pipeline"]
+    expr_stages = [s for s in stages if isinstance(s, dict) and s.get("type") == "filters.expression"]
+    assert any("Z >=" in s.get("expression", "") for s in expr_stages)
 
 
 if __name__ == "__main__":
