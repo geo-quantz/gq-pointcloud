@@ -7,7 +7,9 @@ from lib.filter import (
     IntensityParams,
     RangeParams,
     DuplicateParams,
+    StatisticalOutlierParams,
     build_pipeline,
+    build_statistical_outlier_filter,
     execute_pipeline,
 )
 
@@ -61,6 +63,43 @@ def test_pipeline_builder():
             # It might fail if 'Distance' dimension is missing, which is expected for standard LAS.
             if "Distance" in result["error"]:
                 print("Note: 'Distance' dimension failure is expected if not in LAS.")
+
+
+def test_statistical_outlier_filter_disabled():
+    result = build_statistical_outlier_filter(None)
+    assert result is None
+
+    result = build_statistical_outlier_filter(StatisticalOutlierParams(enabled=False))
+    assert result is None
+
+
+def test_statistical_outlier_filter_defaults():
+    params = StatisticalOutlierParams()
+    stage = build_statistical_outlier_filter(params)
+    assert stage is not None
+    assert stage["type"] == "filters.outlier"
+    assert stage["method"] == "statistical"
+    assert stage["mean_k"] == 8
+    assert stage["multiplier"] == 2.0
+
+
+def test_statistical_outlier_filter_custom():
+    params = StatisticalOutlierParams(mean_k=16, multiplier=1.5)
+    stage = build_statistical_outlier_filter(params)
+    assert stage["mean_k"] == 16
+    assert stage["multiplier"] == 1.5
+
+
+def test_pipeline_includes_statistical_outlier():
+    options = FilterOptions(
+        statistical_outlier=StatisticalOutlierParams(mean_k=8, multiplier=2.0),
+    )
+    pipeline = build_pipeline("input.las", "output.las", options)
+    stages = pipeline["pipeline"]
+    types = [s.get("type") for s in stages if isinstance(s, dict)]
+    assert "filters.outlier" in types
+    outlier_stage = next(s for s in stages if isinstance(s, dict) and s.get("type") == "filters.outlier")
+    assert outlier_stage["method"] == "statistical"
 
 
 if __name__ == "__main__":
