@@ -43,7 +43,8 @@ def test_pipeline_builder():
 
     # Verify structure
     assert "pipeline" in pipeline_dict
-    assert len(pipeline_dict["pipeline"]) == 6  # input + 4 filters + writer
+    # input + range(1) + normal(1) + incidence(1) + intensity(1) + duplicate(2) + writer(1) = 8
+    assert len(pipeline_dict["pipeline"]) == 8
     assert pipeline_dict["pipeline"][0] == input_file
     assert pipeline_dict["pipeline"][-1]["type"] == "writers.las"
 
@@ -71,18 +72,28 @@ def test_radius_outlier_filter_disabled():
 
 
 def test_radius_outlier_filter_defaults():
-    stage = build_radius_outlier_filter(RadiusOutlierParams())
-    assert stage is not None
-    assert stage["type"] == "filters.outlier"
-    assert stage["method"] == "radius"
-    assert stage["radius"] == 1.0
-    assert stage["min_k"] == 2
+    stages = build_radius_outlier_filter(RadiusOutlierParams())
+    # Returns a two-stage list: [filters.outlier, filters.expression]
+    assert stages is not None
+    assert isinstance(stages, list)
+    assert len(stages) == 2
+    outlier_stage = stages[0]
+    assert outlier_stage["type"] == "filters.outlier"
+    assert outlier_stage["method"] == "radius"
+    assert outlier_stage["radius"] == 1.0
+    assert outlier_stage["min_k"] == 2
+    expression_stage = stages[1]
+    assert expression_stage["type"] == "filters.expression"
+    assert "Classification != 7" in expression_stage["expression"]
 
 
 def test_radius_outlier_filter_custom():
-    stage = build_radius_outlier_filter(RadiusOutlierParams(radius=0.5, min_k=5))
-    assert stage["radius"] == 0.5
-    assert stage["min_k"] == 5
+    stages = build_radius_outlier_filter(RadiusOutlierParams(radius=0.5, min_k=5))
+    assert isinstance(stages, list)
+    assert stages[0]["radius"] == 0.5
+    assert stages[0]["min_k"] == 5
+    # Expression stage must still be present
+    assert stages[1]["type"] == "filters.expression"
 
 
 def test_pipeline_includes_radius_outlier():
@@ -92,9 +103,13 @@ def test_pipeline_includes_radius_outlier():
     pipeline = build_pipeline("input.las", "output.las", options)
     stages = pipeline["pipeline"]
     types = [s.get("type") for s in stages if isinstance(s, dict)]
+    # Both the marker stage and the removal expression must be present
     assert "filters.outlier" in types
+    assert "filters.expression" in types
     outlier_stage = next(s for s in stages if isinstance(s, dict) and s.get("type") == "filters.outlier")
     assert outlier_stage["method"] == "radius"
+    expr_stage = next(s for s in stages if isinstance(s, dict) and s.get("type") == "filters.expression")
+    assert "Classification != 7" in expr_stage["expression"]
 
 
 if __name__ == "__main__":

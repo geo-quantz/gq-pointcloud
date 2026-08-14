@@ -350,20 +350,29 @@ def build_color_cleaning_stages(params: Optional[ColorCleanParams]) -> List[Dict
 
 def build_radius_outlier_filter(
         params: Optional[RadiusOutlierParams],
-) -> Optional[Dict[str, Any]]:
+) -> Optional[List[Dict[str, Any]]]:
     """Build a radius-based outlier removal stage using filters.outlier.
 
-    Points with fewer than min_k neighbors within the given radius are removed.
-    Useful for removing isolated stray points that are spatially isolated.
+    PDAL's filters.outlier marks outliers as Classification=7 (noise) rather
+    than removing them. A follow-up filters.expression is therefore required
+    to actually drop those points from the output.
+
+    Returns a two-stage list: [filters.outlier, filters.expression].
     """
     if not params or not params.enabled:
         return None
-    return {
-        "type": "filters.outlier",
-        "method": "radius",
-        "radius": params.radius,
-        "min_k": params.min_k,
-    }
+    return [
+        {
+            "type": "filters.outlier",
+            "method": "radius",
+            "radius": params.radius,
+            "min_k": params.min_k,
+        },
+        {
+            "type": FilterType.EXPRESSION,
+            "expression": "Classification != 7",
+        },
+    ]
 
 
 def build_duplicate_filter(
@@ -429,7 +438,7 @@ def build_pipeline(
 
     # 5. Radius Outlier Removal
     f_rad = build_radius_outlier_filter(filter_params.radius_outlier)
-    if f_rad: stages.append(f_rad)
+    if f_rad: stages.extend(f_rad)
 
     # 6. Voxel Downsampling
     f_vox = build_voxel_filter(filter_params.voxel)
