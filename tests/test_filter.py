@@ -7,7 +7,9 @@ from lib.filter import (
     IntensityParams,
     RangeParams,
     DuplicateParams,
+    ReturnNumberParams,
     build_pipeline,
+    build_return_number_filter,
     execute_pipeline,
 )
 
@@ -61,6 +63,38 @@ def test_pipeline_builder():
             # It might fail if 'Distance' dimension is missing, which is expected for standard LAS.
             if "Distance" in result["error"]:
                 print("Note: 'Distance' dimension failure is expected if not in LAS.")
+
+
+def test_return_number_filter_disabled():
+    assert build_return_number_filter(None) is None
+    assert build_return_number_filter(ReturnNumberParams(enabled=False)) is None
+    assert build_return_number_filter(ReturnNumberParams(keep_numbers=[])) is None
+
+
+def test_return_number_filter_first_return():
+    stage = build_return_number_filter(ReturnNumberParams(keep_numbers=[1]))
+    assert stage is not None
+    assert stage["type"] == "filters.expression"
+    assert "ReturnNumber == 1" in stage["expression"]
+
+
+def test_return_number_filter_multiple():
+    stage = build_return_number_filter(ReturnNumberParams(keep_numbers=[1, 2]))
+    assert stage is not None
+    expr = stage["expression"]
+    assert "ReturnNumber == 1" in expr
+    assert "ReturnNumber == 2" in expr
+    assert "||" in expr
+
+
+def test_pipeline_includes_return_number():
+    options = FilterOptions(
+        return_number=ReturnNumberParams(keep_numbers=[1]),
+    )
+    pipeline = build_pipeline("input.las", "output.las", options)
+    stages = pipeline["pipeline"]
+    expr_stages = [s for s in stages if isinstance(s, dict) and s.get("type") == "filters.expression"]
+    assert any("ReturnNumber" in s.get("expression", "") for s in expr_stages)
 
 
 if __name__ == "__main__":
