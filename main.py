@@ -15,6 +15,7 @@ from lib.filter import (
     RangeParams,
     VoxelParams,
     ColorCleanParams,
+    ReturnNumberParams,
     build_pipeline,
     execute_pipeline,
     save_report,
@@ -226,6 +227,20 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help="Enable duplicate point removal (removes exact XYZ matches).",
     )
 
+    # Return Number Filter Group
+    ret_group = parser.add_argument_group("Return Number Filter")
+    ret_group.add_argument(
+        "--keep-returns",
+        type=int,
+        nargs="+",
+        metavar="N",
+        help=(
+            "Retain only points with these LAS ReturnNumber values. "
+            "e.g. --keep-returns 1  (first return only, canopy/surface top). "
+            "--keep-returns 1 2  (first and second returns)"
+        ),
+    )
+
     # Performance Group
     perf_group = parser.add_argument_group("Performance")
     perf_group.add_argument(
@@ -302,6 +317,11 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
     if args.deduplicate or args.merge:
         duplicate = DuplicateParams(enabled=True)
 
+    # Return number filter
+    return_number = None
+    if args.keep_returns:
+        return_number = ReturnNumberParams(keep_numbers=list(args.keep_returns))
+
     return FilterOptions(
         incidence=incidence,
         intensity=intensity,
@@ -309,6 +329,7 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
         voxel=voxel,
         color_clean=color_clean,
         duplicate=duplicate,
+        return_number=return_number,
         preset_name=args.preset
     )
 

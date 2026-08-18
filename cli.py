@@ -9,6 +9,7 @@ from lib.filter import (
     IncidenceAngleParams,
     IntensityParams,
     RangeParams,
+    ReturnNumberParams,
     build_pipeline,
     execute_pipeline,
 )
@@ -67,6 +68,19 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help="Enable duplicate point removal (removes exact XYZ matches).",
     )
 
+    # Return Number Filter Group
+    ret_group = parser.add_argument_group("Return Number Filter")
+    ret_group.add_argument(
+        "--keep-returns",
+        type=int,
+        nargs="+",
+        metavar="N",
+        help=(
+            "Retain only points with these LAS ReturnNumber values. "
+            "e.g. --keep-returns 1  (first return only)"
+        ),
+    )
+
     return parser.parse_args(args)
 
 
@@ -99,11 +113,17 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
     if args.deduplicate:
         duplicate = DuplicateParams(enabled=True)
 
+    # Return number filter
+    return_number = None
+    if args.keep_returns:
+        return_number = ReturnNumberParams(keep_numbers=list(args.keep_returns))
+
     return FilterOptions(
         incidence=incidence,
         intensity=intensity,
         range_dist=range_dist,
         duplicate=duplicate,
+        return_number=return_number,
     )
 
 

@@ -101,6 +101,23 @@ class DuplicateParams:
 
 
 @dataclass
+class ReturnNumberParams:
+    """Parameters for LAS return number filter.
+
+    keep_numbers: list of ReturnNumber values to retain.
+      e.g. [1] = first return only (surface / canopy top)
+           [1, 2] = first and second returns
+    If keep_numbers is empty and enabled is True, the filter is a no-op.
+    """
+    keep_numbers: List[int] = None  # type: ignore[assignment]
+    enabled: bool = True
+
+    def __post_init__(self) -> None:
+        if self.keep_numbers is None:
+            self.keep_numbers = []
+
+
+@dataclass
 class FilterOptions:
     """Container for all filter parameters, used by the pipeline builder."""
     incidence: Optional[IncidenceAngleParams] = None
@@ -109,6 +126,7 @@ class FilterOptions:
     voxel: Optional[VoxelParams] = None
     color_clean: Optional[ColorCleanParams] = None
     duplicate: Optional[DuplicateParams] = None
+    return_number: Optional[ReturnNumberParams] = None
     preset_name: Optional[str] = None
 
 
@@ -336,6 +354,23 @@ def build_color_cleaning_stages(params: Optional[ColorCleanParams]) -> List[Dict
     return stages
 
 
+def build_return_number_filter(
+        params: Optional[ReturnNumberParams],
+) -> Optional[Dict[str, Any]]:
+    """Build a return number filter using filters.expression.
+
+    Retains only points whose ReturnNumber matches one of the specified values.
+    Useful for extracting first returns (canopy top) or last returns (ground).
+    """
+    if not params or not params.enabled or not params.keep_numbers:
+        return None
+    expr = " || ".join(f"ReturnNumber == {n}" for n in params.keep_numbers)
+    return {
+        "type": FilterType.EXPRESSION,
+        "expression": f"({expr})",
+    }
+
+
 def build_duplicate_filter(
         params: Optional[DuplicateParams],
 ) -> Optional[list]:
@@ -390,18 +425,22 @@ def build_pipeline(
     origin_for_inc = filter_params.range_dist.manual_origin if filter_params.range_dist else None
     inc_stages = build_incidence_angle_filter(filter_params.incidence, input_paths[0], origin_for_inc)
     stages.extend(inc_stages)
-    # 3. Intensity
+    # 3. Return Number Filter
+    f_ret = build_return_number_filter(filter_params.return_number)
+    if f_ret: stages.append(f_ret)
+
+    # 4. Intensity
     f_int = build_intensity_filter(filter_params.intensity)
     if f_int: stages.append(f_int)
 
-    # 4. Color Cleaning
+    # 5. Color Cleaning
     stages.extend(build_color_cleaning_stages(filter_params.color_clean))
 
-    # 5. Voxel Downsampling
+    # 6. Voxel Downsampling
     f_vox = build_voxel_filter(filter_params.voxel)
     if f_vox: stages.append(f_vox)
 
-    # 6. Duplicate Removal
+    # 7. Duplicate Removal
     f_dup = build_duplicate_filter(filter_params.duplicate)
     if f_dup:
         if isinstance(f_dup, list):
