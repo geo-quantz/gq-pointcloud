@@ -15,6 +15,7 @@ from lib.filter import (
     RangeParams,
     VoxelParams,
     ColorCleanParams,
+    HeightZParams,
     build_pipeline,
     execute_pipeline,
     save_report,
@@ -226,6 +227,21 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help="Enable duplicate point removal (removes exact XYZ matches).",
     )
 
+    # Height (Z) Filter Group
+    z_group = parser.add_argument_group("Height (Z) Filter")
+    z_group.add_argument(
+        "--z-min",
+        type=float,
+        metavar="Z",
+        help="Minimum absolute elevation (Z) to retain. Removes underground noise.",
+    )
+    z_group.add_argument(
+        "--z-max",
+        type=float,
+        metavar="Z",
+        help="Maximum absolute elevation (Z) to retain. Removes high-altitude outliers.",
+    )
+
     # Performance Group
     perf_group = parser.add_argument_group("Performance")
     perf_group.add_argument(
@@ -302,6 +318,11 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
     if args.deduplicate or args.merge:
         duplicate = DuplicateParams(enabled=True)
 
+    # Height (Z) filter
+    height_z = None
+    if args.z_min is not None or args.z_max is not None:
+        height_z = HeightZParams(z_min=args.z_min, z_max=args.z_max)
+
     return FilterOptions(
         incidence=incidence,
         intensity=intensity,
@@ -309,6 +330,7 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
         voxel=voxel,
         color_clean=color_clean,
         duplicate=duplicate,
+        height_z=height_z,
         preset_name=args.preset
     )
 
