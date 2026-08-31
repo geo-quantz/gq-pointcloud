@@ -15,6 +15,7 @@ from lib.filter import (
     RangeParams,
     VoxelParams,
     ColorCleanParams,
+    SpatialClipParams,
     build_pipeline,
     execute_pipeline,
     save_report,
@@ -226,6 +227,15 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help="Enable duplicate point removal (removes exact XYZ matches).",
     )
 
+    # Spatial Clip Group
+    clip_group = parser.add_argument_group("Spatial Clip (Bounding Box)")
+    clip_group.add_argument("--clip-xmin", type=float, metavar="X", help="Minimum X coordinate for bounding box clip.")
+    clip_group.add_argument("--clip-xmax", type=float, metavar="X", help="Maximum X coordinate for bounding box clip.")
+    clip_group.add_argument("--clip-ymin", type=float, metavar="Y", help="Minimum Y coordinate for bounding box clip.")
+    clip_group.add_argument("--clip-ymax", type=float, metavar="Y", help="Maximum Y coordinate for bounding box clip.")
+    clip_group.add_argument("--clip-zmin", type=float, metavar="Z", help="Minimum Z coordinate for bounding box clip.")
+    clip_group.add_argument("--clip-zmax", type=float, metavar="Z", help="Maximum Z coordinate for bounding box clip.")
+
     # Performance Group
     perf_group = parser.add_argument_group("Performance")
     perf_group.add_argument(
@@ -302,6 +312,16 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
     if args.deduplicate or args.merge:
         duplicate = DuplicateParams(enabled=True)
 
+    # Spatial clip
+    spatial_clip = None
+    clip_vals = [args.clip_xmin, args.clip_xmax, args.clip_ymin, args.clip_ymax, args.clip_zmin, args.clip_zmax]
+    if any(v is not None for v in clip_vals):
+        spatial_clip = SpatialClipParams(
+            x_min=args.clip_xmin, x_max=args.clip_xmax,
+            y_min=args.clip_ymin, y_max=args.clip_ymax,
+            z_min=args.clip_zmin, z_max=args.clip_zmax,
+        )
+
     return FilterOptions(
         incidence=incidence,
         intensity=intensity,
@@ -309,6 +329,7 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
         voxel=voxel,
         color_clean=color_clean,
         duplicate=duplicate,
+        spatial_clip=spatial_clip,
         preset_name=args.preset
     )
 
