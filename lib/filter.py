@@ -101,6 +101,17 @@ class DuplicateParams:
 
 
 @dataclass
+class RadiusOutlierParams:
+    """Parameters for radius-based outlier removal.
+    Uses PDAL's filters.outlier (method=radius): points with fewer than
+    min_k neighbors within the given radius are classified as noise and removed.
+    """
+    radius: float = 1.0
+    min_k: int = 2
+    enabled: bool = True
+
+
+@dataclass
 class FilterOptions:
     """Container for all filter parameters, used by the pipeline builder."""
     incidence: Optional[IncidenceAngleParams] = None
@@ -109,6 +120,7 @@ class FilterOptions:
     voxel: Optional[VoxelParams] = None
     color_clean: Optional[ColorCleanParams] = None
     duplicate: Optional[DuplicateParams] = None
+    radius_outlier: Optional[RadiusOutlierParams] = None
     preset_name: Optional[str] = None
 
 
@@ -336,6 +348,33 @@ def build_color_cleaning_stages(params: Optional[ColorCleanParams]) -> List[Dict
     return stages
 
 
+def build_radius_outlier_filter(
+        params: Optional[RadiusOutlierParams],
+) -> Optional[List[Dict[str, Any]]]:
+    """Build a radius-based outlier removal stage using filters.outlier.
+
+    PDAL's filters.outlier marks outliers as Classification=7 (noise) rather
+    than removing them. A follow-up filters.expression is therefore required
+    to actually drop those points from the output.
+
+    Returns a two-stage list: [filters.outlier, filters.expression].
+    """
+    if not params or not params.enabled:
+        return None
+    return [
+        {
+            "type": "filters.outlier",
+            "method": "radius",
+            "radius": params.radius,
+            "min_k": params.min_k,
+        },
+        {
+            "type": FilterType.EXPRESSION,
+            "expression": "Classification != 7",
+        },
+    ]
+
+
 def build_duplicate_filter(
         params: Optional[DuplicateParams],
 ) -> Optional[list]:
@@ -397,7 +436,11 @@ def build_pipeline(
     # 4. Color Cleaning
     stages.extend(build_color_cleaning_stages(filter_params.color_clean))
 
-    # 5. Voxel Downsampling
+    # 5. Radius Outlier Removal
+    f_rad = build_radius_outlier_filter(filter_params.radius_outlier)
+    if f_rad: stages.extend(f_rad)
+
+    # 6. Voxel Downsampling
     f_vox = build_voxel_filter(filter_params.voxel)
     if f_vox: stages.append(f_vox)
 

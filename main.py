@@ -15,6 +15,7 @@ from lib.filter import (
     RangeParams,
     VoxelParams,
     ColorCleanParams,
+    RadiusOutlierParams,
     build_pipeline,
     execute_pipeline,
     save_report,
@@ -226,6 +227,28 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help="Enable duplicate point removal (removes exact XYZ matches).",
     )
 
+    # Radius Outlier Removal Group
+    ror_group = parser.add_argument_group("Radius Outlier Removal")
+    ror_group.add_argument(
+        "--outlier-radius",
+        action="store_true",
+        help="Enable radius-based outlier removal (filters.outlier method=radius).",
+    )
+    ror_group.add_argument(
+        "--outlier-radius-value",
+        type=float,
+        default=1.0,
+        metavar="R",
+        help="Search radius for neighbor counting (default: 1.0).",
+    )
+    ror_group.add_argument(
+        "--outlier-min-k",
+        type=int,
+        default=2,
+        metavar="K",
+        help="Minimum number of neighbors required within radius (default: 2).",
+    )
+
     # Performance Group
     perf_group = parser.add_argument_group("Performance")
     perf_group.add_argument(
@@ -302,6 +325,14 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
     if args.deduplicate or args.merge:
         duplicate = DuplicateParams(enabled=True)
 
+    # Radius outlier removal
+    radius_outlier = None
+    if args.outlier_radius:
+        radius_outlier = RadiusOutlierParams(
+            radius=args.outlier_radius_value,
+            min_k=args.outlier_min_k,
+        )
+
     return FilterOptions(
         incidence=incidence,
         intensity=intensity,
@@ -309,6 +340,7 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
         voxel=voxel,
         color_clean=color_clean,
         duplicate=duplicate,
+        radius_outlier=radius_outlier,
         preset_name=args.preset
     )
 
