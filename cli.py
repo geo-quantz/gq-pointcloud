@@ -9,6 +9,7 @@ from lib.filter import (
     IncidenceAngleParams,
     IntensityParams,
     RangeParams,
+    RadiusSampleParams,
     build_pipeline,
     execute_pipeline,
 )
@@ -67,6 +68,15 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help="Enable duplicate point removal (removes exact XYZ matches).",
     )
 
+    # Radius-based Thinning Group
+    sample_group = parser.add_argument_group("Radius-based Thinning")
+    sample_group.add_argument(
+        "--sample-radius",
+        type=float,
+        metavar="R",
+        help="Minimum spacing between retained points (Poisson disk sampling).",
+    )
+
     return parser.parse_args(args)
 
 
@@ -99,11 +109,17 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
     if args.deduplicate:
         duplicate = DuplicateParams(enabled=True)
 
+    # Radius-based thinning
+    radius_sample = None
+    if args.sample_radius is not None:
+        radius_sample = RadiusSampleParams(radius=args.sample_radius)
+
     return FilterOptions(
         incidence=incidence,
         intensity=intensity,
         range_dist=range_dist,
         duplicate=duplicate,
+        radius_sample=radius_sample,
     )
 
 

@@ -101,6 +101,19 @@ class DuplicateParams:
 
 
 @dataclass
+class RadiusSampleParams:
+    """Parameters for radius-based thinning using filters.sample (Poisson disk sampling).
+
+    Retains points such that no two retained points are closer than `radius`
+    to each other. Unlike voxel downsampling, points are not snapped to a grid
+    — the actual measured coordinates are preserved, giving a more natural
+    and uniform distribution without coordinate quantization.
+    """
+    radius: float = 0.05
+    enabled: bool = True
+
+
+@dataclass
 class FilterOptions:
     """Container for all filter parameters, used by the pipeline builder."""
     incidence: Optional[IncidenceAngleParams] = None
@@ -109,6 +122,7 @@ class FilterOptions:
     voxel: Optional[VoxelParams] = None
     color_clean: Optional[ColorCleanParams] = None
     duplicate: Optional[DuplicateParams] = None
+    radius_sample: Optional[RadiusSampleParams] = None
     preset_name: Optional[str] = None
 
 
@@ -336,6 +350,23 @@ def build_color_cleaning_stages(params: Optional[ColorCleanParams]) -> List[Dict
     return stages
 
 
+def build_radius_sample_filter(
+        params: Optional[RadiusSampleParams],
+) -> Optional[Dict[str, Any]]:
+    """Build a Poisson disk sampling stage using filters.sample.
+
+    Ensures a minimum spatial separation of `radius` between retained points.
+    Preferred over voxel downsampling when coordinate precision must be preserved
+    (no grid snapping), producing a more natural and uniform point distribution.
+    """
+    if not params or not params.enabled:
+        return None
+    return {
+        "type": "filters.sample",
+        "radius": params.radius,
+    }
+
+
 def build_duplicate_filter(
         params: Optional[DuplicateParams],
 ) -> Optional[list]:
@@ -401,7 +432,11 @@ def build_pipeline(
     f_vox = build_voxel_filter(filter_params.voxel)
     if f_vox: stages.append(f_vox)
 
-    # 6. Duplicate Removal
+    # 6. Radius-based Thinning (Poisson disk sampling — alternative to voxel)
+    f_smp = build_radius_sample_filter(filter_params.radius_sample)
+    if f_smp: stages.append(f_smp)
+
+    # 7. Duplicate Removal
     f_dup = build_duplicate_filter(filter_params.duplicate)
     if f_dup:
         if isinstance(f_dup, list):
