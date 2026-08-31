@@ -9,6 +9,7 @@ from lib.filter import (
     IncidenceAngleParams,
     IntensityParams,
     RangeParams,
+    ClassificationParams,
     build_pipeline,
     execute_pipeline,
 )
@@ -67,6 +68,20 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help="Enable duplicate point removal (removes exact XYZ matches).",
     )
 
+    # Classification Filter Group
+    cls_group = parser.add_argument_group("Classification Filter")
+    cls_group.add_argument(
+        "--keep-classes",
+        type=int,
+        nargs="+",
+        metavar="CODE",
+        help=(
+            "Retain only points with these ASPRS classification codes. "
+            "Common codes: 2=Ground 3=LowVeg 4=MedVeg 5=HighVeg 6=Building "
+            "7=Noise 9=Water 17=Bridge"
+        ),
+    )
+
     return parser.parse_args(args)
 
 
@@ -99,11 +114,17 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
     if args.deduplicate:
         duplicate = DuplicateParams(enabled=True)
 
+    # Classification filter
+    classification = None
+    if args.keep_classes:
+        classification = ClassificationParams(keep_codes=list(args.keep_classes))
+
     return FilterOptions(
         incidence=incidence,
         intensity=intensity,
         range_dist=range_dist,
         duplicate=duplicate,
+        classification=classification,
     )
 
 
