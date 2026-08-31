@@ -15,6 +15,7 @@ from lib.filter import (
     RangeParams,
     VoxelParams,
     ColorCleanParams,
+    StatisticalOutlierParams,
     build_pipeline,
     execute_pipeline,
     save_report,
@@ -226,6 +227,28 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help="Enable duplicate point removal (removes exact XYZ matches).",
     )
 
+    # Statistical Outlier Removal Group
+    sor_group = parser.add_argument_group("Statistical Outlier Removal")
+    sor_group.add_argument(
+        "--outlier-statistical",
+        action="store_true",
+        help="Enable statistical outlier removal (filters.outlier method=statistical).",
+    )
+    sor_group.add_argument(
+        "--outlier-mean-k",
+        type=int,
+        default=8,
+        metavar="K",
+        help="Number of nearest neighbors used to compute mean distance (default: 8).",
+    )
+    sor_group.add_argument(
+        "--outlier-multiplier",
+        type=float,
+        default=2.0,
+        metavar="M",
+        help="Standard deviation multiplier threshold; higher = keep more points (default: 2.0).",
+    )
+
     # Performance Group
     perf_group = parser.add_argument_group("Performance")
     perf_group.add_argument(
@@ -302,6 +325,14 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
     if args.deduplicate or args.merge:
         duplicate = DuplicateParams(enabled=True)
 
+    # Statistical outlier removal
+    statistical_outlier = None
+    if args.outlier_statistical:
+        statistical_outlier = StatisticalOutlierParams(
+            mean_k=args.outlier_mean_k,
+            multiplier=args.outlier_multiplier,
+        )
+
     return FilterOptions(
         incidence=incidence,
         intensity=intensity,
@@ -309,6 +340,7 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
         voxel=voxel,
         color_clean=color_clean,
         duplicate=duplicate,
+        statistical_outlier=statistical_outlier,
         preset_name=args.preset
     )
 
